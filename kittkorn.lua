@@ -447,34 +447,30 @@ end
 
 local evading = false
 local function moveToDestination(model, destination)
-	return pcall(function()
+	pcall(function()
 		local MAX_ATTEMPTS = 5
 		local ATTEMPT_RADIUS = 5
-		local ROTATION_INCREMENT = 10
+		local ROTATION_INCREMENT = 10 -- หมุนทีละ 10 องศา
 		local MAX_ROTATION = 360
-
-		local function isTargetATMValid()
-			for _, atm in ATMModule.class.objects do
-				if atm.instance == currentTargetATM then
-					local hacker = atm.states.hacker:get() ~= nil
-					local isDisabled = not atm.states.disabled:get()
-					return isDisabled and not hacker
-				end
-			end
-			return false
-		end
-
-		if not isTargetATMValid() then
-			warn("ATM เป้าหมายใช้ไม่ได้แล้ว ลองหาตู้ใหม่")
-			selectNextATM() -- ฟังก์ชันนี้ควรเป็นของมึงเองไว้เปลี่ยนเป้าหมาย
-			return false
-		end
 
 		for attempt = 1, MAX_ATTEMPTS do
 			local hrp = HRP()
 			if not hrp then return false end
 
+			for _, atm in ATMModule.class.objects do
+				if atm.instance == currentTargetATM then
+					local hacker = atm.states.hacker:get() ~= nil
+					local isDisabled = not atm.states.disabled:get()
+					if not isDisabled or hacker then
+						warn("ATM เป้าหมายใช้ไม่ได้แล้ว ข้ามไปตู้ถัดไป")
+						return false
+					end
+					break
+				end
+			end
+
 			local originalPos = hrp.Position
+
 			local hrpPos = model:GetPivot().Position
 			local offset = Vector3.new(
 				math.random(-ATTEMPT_RADIUS, ATTEMPT_RADIUS),
@@ -487,13 +483,12 @@ local function moveToDestination(model, destination)
 			local pathSuccess = false
 
 			for angle = 0, MAX_ROTATION, ROTATION_INCREMENT do
-				local path = PathfindingService:CreatePath({
-                                AgentRadius = 5,
-                                AgentHeight = 4,
-                                AgentCanJump = true,
-                                AgentCanClimb = false,
-                                WaypointSpacing = 13
-                            })
+				path = PathfindingService:CreatePath({
+					AgentRadius = 2,
+					AgentHeight = 5,
+					AgentCanJump = false,
+					AgentMaxSlope = maxSlope
+				})
 				path:ComputeAsync(hrpPos, targetPos)
 
 				if path.Status == Enum.PathStatus.Success then
@@ -510,9 +505,16 @@ local function moveToDestination(model, destination)
 				local waypoints = path:GetWaypoints()
 				local lastDir = nil
 				for i, wp in ipairs(waypoints) do
-					if not isTargetATMValid() then
-						warn("ATM โดนแฮกระหว่างเดินทาง หยุด!")
-						return false
+					for _, atm in ATMModule.class.objects do
+						if atm.instance == currentTargetATM then
+							local hacker = atm.states.hacker:get() ~= nil
+							local isDisabled = not atm.states.disabled:get()
+							if not isDisabled or hacker then
+								warn("ATM เป้าหมายโดนแฮกระหว่างเดินทาง หยุด!")
+								return false
+							end
+							break
+						end
 					end
 
 					local target = wp.Position + Vector3.new(0, hoverHeight, 0)
@@ -523,6 +525,7 @@ local function moveToDestination(model, destination)
 
 				wait(0.1)
 
+				-- จอดรถ
 				for _, part in pairs(model:GetDescendants()) do
 					if part:IsA("BasePart") then
 						part.Anchored = true
@@ -566,7 +569,6 @@ local function moveToDestination(model, destination)
 		end
 
 		warn("ล้มเหลวในการสร้างเส้นทางทั้งหมด")
-		selectNextATM() -- เปลี่ยนเป้าหมายถ้าทำไม่ได้จริง
 		return false
 	end)
 end
